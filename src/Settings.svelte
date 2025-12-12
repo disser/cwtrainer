@@ -7,11 +7,21 @@
     punctuation: false,
     accented: false
   };
+  export let showMorsePattern = false;
+  export let morsePatternDelay = 3;
+  export let showReferenceTable = false;
   export let onSettingsChange;
   
   function handleChange() {
     if (onSettingsChange) {
-      onSettingsChange({ wpm, frequency, enabledSets });
+      onSettingsChange({ 
+        wpm, 
+        frequency, 
+        enabledSets, 
+        showMorsePattern, 
+        morsePatternDelay,
+        showReferenceTable 
+      });
     }
   }
 </script>
@@ -84,6 +94,43 @@
       Accented Characters
     </label>
   </div>
+  
+  <div class="setting-group">
+    <h3>Learning Aids</h3>
+    <label class="checkbox-label">
+      <input 
+        type="checkbox" 
+        bind:checked={showMorsePattern}
+        on:change={handleChange}
+      />
+      Show Morse Pattern
+    </label>
+    
+    {#if showMorsePattern}
+      <div class="indented-setting">
+        <label>
+          Delay (seconds):
+          <input 
+            type="number" 
+            bind:value={morsePatternDelay} 
+            min="0" 
+            max="10" 
+            step="0.5"
+            on:change={handleChange}
+          />
+        </label>
+      </div>
+    {/if}
+    
+    <label class="checkbox-label">
+      <input 
+        type="checkbox" 
+        bind:checked={showReferenceTable}
+        on:change={handleChange}
+      />
+      Show Reference Table
+    </label>
+  </div>
 </div>
 
 <style>
@@ -142,5 +189,11 @@
     width: 18px;
     height: 18px;
     cursor: pointer;
+  }
+  
+  .indented-setting {
+    margin-left: 1.5rem;
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
   }
 </style>

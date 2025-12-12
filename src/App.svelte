@@ -1,10 +1,11 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { MorseGenerator } from './MorseGenerator.js';
-  import { getRandomCharacter } from './MorseData.js';
+  import { getRandomCharacter, morseCode } from './MorseData.js';
   import Settings from './Settings.svelte';
   import Statistics from './Statistics.svelte';
   import Leaderboard from './Leaderboard.svelte';
+  import ReferenceTable from './ReferenceTable.svelte';
   
   // Settings
   let wpm = 20;
@@ -15,6 +16,9 @@
     punctuation: false,
     accented: false
   };
+  let showMorsePattern = false;
+  let morsePatternDelay = 3;
+  let showReferenceTable = false;
   
   // Session state
   let morseGenerator;
@@ -24,6 +28,8 @@
   let userInput = '';
   let feedback = '';
   let feedbackClass = '';
+  let showingMorsePattern = false;
+  let morsePatternTimer = null;
   
   // Timer
   let timeRemaining = 120; // 2 minutes in seconds
@@ -45,6 +51,7 @@
   onMount(() => {
     morseGenerator = new MorseGenerator(wpm, frequency);
     window.addEventListener('keypress', handleKeyPress);
+    window.addEventListener('keydown', handleKeyDown);
   });
   
   onDestroy(() => {
@@ -52,13 +59,18 @@
       morseGenerator.close();
     }
     stopTimer();
+    clearMorsePatternTimer();
     window.removeEventListener('keypress', handleKeyPress);
+    window.removeEventListener('keydown', handleKeyDown);
   });
   
   function handleSettingsChange(settings) {
     wpm = settings.wpm;
     frequency = settings.frequency;
     enabledSets = settings.enabledSets;
+    showMorsePattern = settings.showMorsePattern;
+    morsePatternDelay = settings.morsePatternDelay;
+    showReferenceTable = settings.showReferenceTable;
     
     if (morseGenerator) {
       morseGenerator.setWPM(wpm);
@@ -146,13 +158,59 @@
     userInput = '';
     feedback = `Playing: [Hidden]`;
     feedbackClass = '';
+    showingMorsePattern = false;
     
     characterStartTime = Date.now();
     
+    // Clear any existing pattern timer
+    clearMorsePatternTimer();
+    
     try {
       await morseGenerator.playCharacter(currentCharacter);
+      
+      // Set timer to reveal the morse pattern if enabled
+      if (showMorsePattern && morsePatternDelay >= 0) {
+        morsePatternTimer = setTimeout(() => {
+          revealMorsePattern();
+        }, morsePatternDelay * 1000);
+      }
     } catch (error) {
       console.error('Error playing character:', error);
+    }
+  }
+  
+  function revealMorsePattern() {
+    if (!currentCharacter || !isActive || isPaused) return;
+    
+    const pattern = morseCode[currentCharacter];
+    if (pattern) {
+      feedback = `Pattern: [${pattern}]`;
+      showingMorsePattern = true;
+    }
+  }
+  
+  function clearMorsePatternTimer() {
+    if (morsePatternTimer) {
+      clearTimeout(morsePatternTimer);
+      morsePatternTimer = null;
+    }
+  }
+  
+  async function replayCurrentCharacter() {
+    if (!isActive || isPaused || !currentCharacter) return;
+    
+    try {
+      await morseGenerator.playCharacter(currentCharacter);
+      
+      // Restart the pattern timer if it was active
+      clearMorsePatternTimer();
+      if (showMorsePattern && morsePatternDelay >= 0 && !showingMorsePattern) {
+        morsePatternTimer = setTimeout(() => {
+          revealMorsePattern();
+        }, morsePatternDelay * 1000);
+      }
+    } catch (error) {
+      console.error('Error replaying character:', error);
     }
   }
   
@@ -227,6 +285,15 @@
     }, 500);
   }
   
+  function handleKeyDown(event) {
+    // Check for backspace/delete to replay
+    if (isActive && !isPaused && currentCharacter && 
+        (event.key === "Backspace" || event.key === "Delete")) {
+      event.preventDefault(); // Prevent browser back navigation
+      replayCurrentCharacter();
+    }
+  }
+  
   function formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -234,7 +301,7 @@
   }
 </script>
 
-<main>
+<main class={showReferenceTable ? 'with-reference' : ''}>
   <header>
     <h1>CW Trainer - Morse Code Practice</h1>
   </header>
@@ -245,6 +312,9 @@
         bind:wpm
         bind:frequency
         bind:enabledSets
+        bind:showMorsePattern
+        bind:morsePatternDelay
+        bind:showReferenceTable
         onSettingsChange={handleSettingsChange}
       />
       
@@ -297,6 +367,9 @@
             <div class="feedback {feedbackClass}">
               {feedback || 'Listening...'}
             </div>
+            <button class="replay-button" on:click={replayCurrentCharacter} title="Press backspace to replay">
+              ↻ Replay (⌫)
+            </button>
           {/if}
         </div>
         
@@ -319,6 +392,12 @@
       currentScore={lastScore}
     />
   </div>
+  
+  {#if showReferenceTable}
+    <div class="reference-wrapper">
+      <ReferenceTable bind:enabledSets={enabledSets} />
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -328,6 +407,39 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
+  }
+  
+  main.with-reference {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  
+  @media (min-width: 1200px) {
+    main.with-reference {
+      grid-template-columns: 1fr 350px;
+      grid-gap: 2rem;
+      align-items: start;
+    }
+    
+    main.with-reference .container {
+      grid-column: 1;
+    }
+    
+    .reference-wrapper {
+      grid-column: 2;
+      position: sticky;
+      top: 2rem;
+      margin-top: 3rem;
+      max-height: calc(100vh - 4rem);
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .reference-wrapper :global(.reference-container) {
+      flex: 1;
+      max-height: calc(100vh - 8rem);
+      margin-top: 0;
+    }
   }
   
   main {
@@ -491,6 +603,7 @@
     align-items: center;
     justify-content: center;
     margin-bottom: 1rem;
+    position: relative;
   }
   
   .feedback {
@@ -536,5 +649,24 @@
   .user-input strong {
     color: #2196F3;
     font-size: 1.5rem;
+  }
+  
+  .replay-button {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #FF9800;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  
+  .replay-button:hover {
+    background: #F57C00;
   }
 </style>
